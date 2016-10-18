@@ -33,7 +33,7 @@ seed(seed=1235)
 
 ## space and demographics
 
-l=50 # side of the square lattice
+l=10 # side of the square lattice
 n_agloc=100 # number of agents in each location initially
 
 N_loc=l*l # number of locations
@@ -42,13 +42,13 @@ G=nx.grid_2d_graph(l,l) # network for the spatial substrate
 
 ## epidemic model parameters
 
-m=20 # number of steps per day
+m=1 # number of steps per day
 
 alpha=0.1
 beta=1.0/n_agloc
 mu=0.1
 
-T_l=98 # latent time
+T_l=9 # latent time
 alpha_step=1-np.power((1-alpha),1.0/float(m)) # probability of moving
 beta_step=beta/(m) # probability of disease transmission
 mu_step=1-np.power((1-mu),1.0/float(m)) # probability of recovery
@@ -56,7 +56,7 @@ gamma=0.0 # increase/decrease on moving probability for infectious individuals
 
 # other parameters
 
-end_time=50
+end_time=10
 
 ## give locations to all agents
 
@@ -93,7 +93,7 @@ for agent in random.sample(agents[iloc],int(perc*n_agloc)):
     state[agent]=1
     #tt=erlang(T_l, loc=0, scale=1)
     tt=np.random.uniform(0,10)
-    print (tt)
+    #print (tt)
     inf_time[agent]=tt
     #inf_time[agent]=T_l # change here the time T_l for one from a distribution to get variation on it
     S[iloc].remove(agent)
@@ -182,11 +182,23 @@ for time in range(end_time):
     #plt.show()
     plt.close()
 
-os.system('mencoder mf://a_*.png -mf w=800:h=600:fps=10:type=png -ovc lavc -lavcopts vcodec=mpeg4:mbd=2:trell -oac copy -o latent_times_Tl_'+str(T_l)+'_'+str(m)+'.avi')
+os.system('mencoder mf://a_*.png -mf w=800:h=600:fps=10:type=png -ovc lavc -lavcopts vcodec=mpeg4:mbd=2:trell -oac copy -o latent_times_l_'+str(l)+'_Tl_'+str(T_l)+'_'+str(m)+'.avi')
 
 os.system('rm a_*.png')
+
 #b) network minimal model for comparison of basic mechanism
 
-#A=nx.adjacency_matrix(G)
+from numpy import linalg as LA
+A=nx.adjacency_matrix(G)
+
+print(A)
+print(type(A))
+A=A.todense()
+print(A)
+print(type(A))
+B=LA.matrix_power(A,2)
+print(B)
+print(type(B))
+
 
 
