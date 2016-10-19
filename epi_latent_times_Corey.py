@@ -23,6 +23,7 @@ from numpy.random import binomial,seed
 import random
 import matplotlib.pyplot as plt
 import os
+from scipy.stats import erlang
 
 random.seed(1235)
 seed(seed=1235)
@@ -32,7 +33,7 @@ seed(seed=1235)
 
 ## space and demographics
 
-l=50 # side of the square lattice
+l=10 # side of the square lattice
 n_agloc=100 # number of agents in each location initially
 
 N_loc=l*l # number of locations
@@ -43,19 +44,19 @@ G=nx.grid_2d_graph(l,l) # network for the spatial substrate
 
 m=1 # number of steps per day
 
-alpha=0.5
-beta=0.1
+alpha=0.1
+beta=1.0/n_agloc
 mu=0.1
 
-T_l=40 # latent time
+T_l=9 # latent time
 alpha_step=1-np.power((1-alpha),1.0/float(m)) # probability of moving
-beta_step=2.0/(m*n_agloc) # probability of disease transmission
+beta_step=beta/(m) # probability of disease transmission
 mu_step=1-np.power((1-mu),1.0/float(m)) # probability of recovery
 gamma=0.0 # increase/decrease on moving probability for infectious individuals
 
 # other parameters
 
-end_time=200
+end_time=10
 
 ## give locations to all agents
 
@@ -86,13 +87,15 @@ inf_time=np.zeros(N_agents) # time at which agent became E
 ## initial condition for the epidemics
 
 iloc=(l/2,l/2) # the place where we start having a percentage perc of E individuals 
-perc=0.5 # percentage of E agents initially in location iloc; the rest of agents are S
+perc=0.05 # percentage of E agents initially in location iloc; the rest of agents are S
 
 for agent in random.sample(agents[iloc],int(perc*n_agloc)):
     state[agent]=1
-    #tt=np.random.uniform(0,10)
-    #inf_time[agent]=tt
-    inf_time[agent]=T_l # change here the time T_l for one from a distribution to get variation on it
+    #tt=erlang(T_l, loc=0, scale=1)
+    tt=np.random.uniform(0,10)
+    #print (tt)
+    inf_time[agent]=tt
+    #inf_time[agent]=T_l # change here the time T_l for one from a distribution to get variation on it
     S[iloc].remove(agent)
     E[iloc].add(agent)
     
@@ -120,7 +123,7 @@ for time in range(end_time):
     for k in range(m):
         # first move
         for iloc in locations:
-            N_move=binomial(len(agents[iloc])-len(I[iloc]),alpha)
+            N_move=binomial(len(agents[iloc])-len(I[iloc]),alpha_step)
             for agent in random.sample(agents[iloc]-I[iloc],N_move):
                 jloc=random.sample(G.neighbors(iloc),1)[0]
                 loc[agent]=jloc
@@ -135,7 +138,7 @@ for time in range(end_time):
                 else:
                     R[iloc].remove(agent)
                     R[jloc].add(agent)
-            N_move=binomial(len(I[iloc]),alpha*gamma)
+            N_move=binomial(len(I[iloc]),alpha_step*gamma)
             for agent in random.sample(I[iloc],N_move):
                 jloc=random.sample(G.neighbors(iloc),1)[0]
                 loc[agent]=jloc
@@ -145,13 +148,14 @@ for time in range(end_time):
                 I[jloc].add(agent)
         # second infection dynamics
         for iloc in locations:
-            N_inf=binomial(len(S[iloc]),1.0-np.power(1.0-beta,len(I[iloc])))
-            N_rem=binomial(len(I[iloc]),mu)
+            N_inf=binomial(len(S[iloc]),1.0-np.power(1.0-beta_step,len(I[iloc])))
+            N_rem=binomial(len(I[iloc]),mu_step)
             for agent in random.sample(S[iloc],N_inf):
                 state[agent]=1
-                #tt=np.random.uniform(0,10)
-                #inf_time[agent]=tt
-                inf_time[agent]=time+T_l # change here the time T_l for one from a distribution to get variation on it
+                #tt=erlang(T_l, loc=0, scale=1)
+                tt=np.random.uniform(0,10)
+                inf_time[agent]=time+tt
+                #inf_time[agent]=time+T_l # change here the time T_l for one from a distribution to get variation on it
                 S[iloc].remove(agent)
                 E[iloc].add(agent)
             for agent in random.sample(I[iloc],N_rem):
@@ -167,22 +171,34 @@ for time in range(end_time):
     I_tot=0
     for iloc in locations:
         I_tot+=len(I[iloc])
-    print(float(time+1)/m,I_tot)
+    print(time,I_tot)
     for ix in range(l):
         for iy in range(l):
             i_plot[ix][iy]=float(len(I[(ix,iy)]))/float(len(agents[(ix,iy)]))
     fig=plt.figure()
     #plt.subplot(221,title='$P$ only space')
-    plt.imshow(i_plot,vmin=0, vmax=1, cmap='jet')
+    plt.imshow(i_plot,vmin=0, vmax=0.5, cmap='jet')
     fig.savefig('a_%.3i.png' % (time+1),bbox_inches='tight')
     #plt.show()
     plt.close()
 
-os.system('mencoder mf://a_*.png -mf w=800:h=600:fps=10:type=png -ovc lavc -lavcopts vcodec=mpeg4:mbd=2:trell -oac copy -o latent_times_Tl_'+str(T_l)+'.avi')
+os.system('mencoder mf://a_*.png -mf w=800:h=600:fps=10:type=png -ovc lavc -lavcopts vcodec=mpeg4:mbd=2:trell -oac copy -o latent_times_l_'+str(l)+'_Tl_'+str(T_l)+'_'+str(m)+'.avi')
 
 os.system('rm a_*.png')
+
 #b) network minimal model for comparison of basic mechanism
 
-#A=nx.adjacency_matrix(G)
+from numpy import linalg as LA
+A=nx.adjacency_matrix(G)
+
+print(A)
+print(type(A))
+A=A.todense()
+print(A)
+print(type(A))
+B=LA.matrix_power(A,2)
+print(B)
+print(type(B))
+
 
 
