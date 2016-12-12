@@ -34,7 +34,7 @@ seed(seed=12345)
 ## space and demographics
 
 l=35 # side of the square lattice
-n_agloc=500 # number of agents in each location initially
+n_agloc=100 # number of agents in each location initially
 
 N_loc=l*l # number of locations
 N_agents=l*l*n_agloc # total number of agents
@@ -49,6 +49,27 @@ beta=0.2/n_agloc
 mu=0.1
 delta=0.001 #flight prob
 
+exp=1.75 #exponent for the gravity law for mobility
+
+mob_net=np.zeros((l*l,l*l))
+
+for fro in range(l*l):
+    x1=fro-l*int(fro/l)
+    y1=int(fro/l)
+    norm=0.0
+    for to in range(l*l):
+        if fro!=to:
+            x2=to-l*int(to/l)
+            y2=int(to/l)
+            d=np.sqrt((x1-x2)*(x1-x2)+(y1-y2)*(y1-y2))
+            a=1.0/np.power(d,exp)
+            mob_net[fro][to]=a
+            norm+=a
+    for to in range(l*l):
+        if fro!=to:
+            mob_net[fro][to]=mob_net[fro][to]/norm
+
+
 T_l=1 # incubation period
 alpha_step=1-np.power((1-alpha),1.0/float(m)) # probability of moving
 beta_step=beta/(m) # probability of disease transmission
@@ -57,7 +78,7 @@ gamma=0.0 # increase/decrease on moving probability for infectious individuals
 
 # other parameters
 
-end_time=100
+end_time=500
 
 #choose how the incubation periods are chosen from an Erlang distribution
 # parameters of the distribution: k=shape, mu=scale; 
@@ -81,7 +102,7 @@ rv=erlang(k,scale=mu)
 
 ## give locations to all agents
 
-Nruns=2
+Nruns=10
 
 
 peak_height=list()
@@ -171,16 +192,24 @@ for irun in range(Nruns):
         for k in range(m):
             # first move
             for iloc in locations:
-                N_move=binomial(len(agents[iloc])-len(I[iloc]),alpha_step)
-                agents_move=random.sample(agents[iloc]-I[iloc],N_move)
-                N_flight=binomial(len(agents_move),delta)
-                agents_flight=random.sample(agents_move,N_flight)
-                agents_flight=set(agents_flight)
+                fro=iloc[0]+l*iloc[1]
+                N_move=binomial(len(agents[iloc])-len(I[iloc]),alpha) # number of agents moving
+                agents_move=random.sample(agents[iloc]-I[iloc],N_move) # set of agents moving
+                #N_flight=binomial(len(agents_move),delta)
+                #agents_flight=random.sample(agents_move,N_flight)
+                #agents_flight=set(agents_flight)
                 agents_move=set(agents_move)
-                agents_diff=set()
-                agents_diff=agents_move-agents_flight
-                for agent in agents_diff:
-                    jloc=random.sample(G.neighbors(iloc),1)[0]
+                #agents_diff=set()
+                #agents_diff=agents_move-agents_flight
+                # places where they will move
+                dest=np.random.choice(np.arange(l*l),size=N_move,replace=True,p=mob_net[fro][:])
+                i=0
+                for agent in agents_move:
+                    to=dest[i]
+                    xdest=to-l*int(to/l)
+                    ydest=int(to/l)
+                    #jloc=random.sample(G.neighbors(iloc),1)[0]
+                    jloc=(xdest,ydest)
                     loc[agent]=jloc
                     agents[iloc].remove(agent)
                     agents[jloc].add(agent)
@@ -193,24 +222,31 @@ for irun in range(Nruns):
                     else:
                         R[iloc].remove(agent)
                         R[jloc].add(agent)
-                for agent in agents_flight:
-                    jloc=random.choice(locations)
-                    loc[agent]=jloc
-                    agents[iloc].remove(agent)
-                    agents[jloc].add(agent)
-                    if state[agent]==0:
-                        S[iloc].remove(agent)
-                        S[jloc].add(agent)
-                    elif state[agent]==1:
-                        E[iloc].remove(agent)
-                        E[jloc].add(agent)
-                    else:
-                        R[iloc].remove(agent)
-                        R[jloc].add(agent)
+                    i+=1
+                #for agent in agents_flight:
+                    #jloc=random.choice(locations)
+                    #loc[agent]=jloc
+                    #agents[iloc].remove(agent)
+                    #agents[jloc].add(agent)
+                    #if state[agent]==0:
+                        #S[iloc].remove(agent)
+                        #S[jloc].add(agent)
+                    #elif state[agent]==1:
+                        #E[iloc].remove(agent)
+                        #E[jloc].add(agent)
+                    #else:
+                        #R[iloc].remove(agent)
+                        #R[jloc].add(agent)
                 ###HAVE TO INCLUDE THE TELEPORTATIONS FOR I IN CASE GAMMA!=0
-                N_move=binomial(len(I[iloc]),alpha_step*gamma)
+                N_move=binomial(len(I[iloc]),alpha*gamma)
+                dest=np.random.choice(np.arange(l*l),size=N_move,replace=True,p=mob_net[fro][:])
+                i=0
                 for agent in random.sample(I[iloc],N_move):
-                    jloc=random.sample(G.neighbors(iloc),1)[0]
+                    #jloc=random.sample(G.neighbors(iloc),1)[0]
+                    to=dest[i]
+                    xdest=to-l*int(to/l)
+                    ydest=int(to/l)
+                    jloc=(xdest,ydest)
                     loc[agent]=jloc
                     agents[iloc].remove(agent)
                     agents[jloc].add(agent)
@@ -250,17 +286,17 @@ for irun in range(Nruns):
                 if kk > peak_height[irun][ix][iy]:
                     peak_height[irun][ix][iy]=kk
                     peak_time[irun][ix][iy]=time+1
+        fig=plt.figure()
+        #plt.subplot(221,title='$P$ only space')
+        plt.imshow(i_plot,vmin=0, vmax=0.5, cmap='jet')
+        fig.savefig('a_%.3i.png' % (time+1),bbox_inches='tight')
+        #plt.show()
+        plt.close()
+
+    os.system('mencoder mf://a_*.png -mf w=800:h=600:fps=10:type=png -ovc lavc -lavcopts vcodec=mpeg4:mbd=2:trell -oac copy -o latent_times_l_'+str(l)+'_Tl_'+str(T_l)+'_'+str(m)+'_'+str(irun)+'.avi')
+
+    os.system('rm a_*.png')
     print(Nruns-irun,'end')
-        #fig=plt.figure()
-        ##plt.subplot(221,title='$P$ only space')
-        #plt.imshow(i_plot,vmin=0, vmax=0.5, cmap='jet')
-        #fig.savefig('a_%.3i.png' % (time+1),bbox_inches='tight')
-        ##plt.show()
-        #plt.close()
-
-    #os.system('mencoder mf://a_*.png -mf w=800:h=600:fps=10:type=png -ovc lavc -lavcopts vcodec=mpeg4:mbd=2:trell -oac copy -o latent_times_l_'+str(l)+'_Tl_'+str(T_l)+'_'+str(m)+'_'+str(irun)+'.avi')
-
-    #os.system('rm a_*.png')
 
 
     #fig=plt.figure()
@@ -344,7 +380,7 @@ for ix in range(l):
     for iy in range(l):
         d=abs(ix-a)+abs(iy-a)
         if d<maxdist:
-            print(d)
+            #print(d)
             for irun in range(Nruns):
                 kk=float(peak_time[irun][ix][iy])
                 av_peak_time[d]+=kk
