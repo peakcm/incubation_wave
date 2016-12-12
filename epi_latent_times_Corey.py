@@ -33,8 +33,8 @@ seed(seed=12345)
 
 ## space and demographics
 
-l=50 # side of the square lattice
-n_agloc=100 # number of agents in each location initially
+l=35 # side of the square lattice
+n_agloc=500 # number of agents in each location initially
 
 N_loc=l*l # number of locations
 N_agents=l*l*n_agloc # total number of agents
@@ -45,11 +45,11 @@ G=nx.grid_2d_graph(l,l) # network for the spatial substrate
 m=1 # number of steps per day
 
 alpha=0.1
-beta=1.0/n_agloc
+beta=0.2/n_agloc
 mu=0.1
-delta=0.001
+delta=0.001 #flight prob
 
-T_l=1 # latent time
+T_l=1 # incubation period
 alpha_step=1-np.power((1-alpha),1.0/float(m)) # probability of moving
 beta_step=beta/(m) # probability of disease transmission
 mu_step=1-np.power((1-mu),1.0/float(m)) # probability of recovery
@@ -57,11 +57,31 @@ gamma=0.0 # increase/decrease on moving probability for infectious individuals
 
 # other parameters
 
-end_time=500
+end_time=100
+
+#choose how the incubation periods are chosen from an Erlang distribution
+# parameters of the distribution: k=shape, mu=scale; 
+                                #T_l=k*mu (mean), sigma^2=k*mu^2 (variance);
+                                #k=(T_l/sigma)^2, mu=sigma^2/T_l
+    #1- constant variance sigma_0^2 across different T_l's
+    #2- constant k (not 1, because with k=1 we have an exponential distribution),
+    #sigma increases with T_l 
+
+erlang_type=2
+sigma_0=2 # will use only in case erlang_type=1 (constant variance)
+k=10 # will use only in case erlang_type=2 (constant k)
+if erlang_type==1:
+    a=T_l/sigma_0
+    mu=sigma_0/a
+    k=a*a
+elif erlang_type==2:
+    mu=T_l/k
+    
+rv=erlang(k,scale=mu)
 
 ## give locations to all agents
 
-Nruns=5
+Nruns=2
 
 
 peak_height=list()
@@ -105,7 +125,6 @@ for irun in range(Nruns):
     iloc=(int(l/2-0.5),int(l/2-0.5)) # the place where we start having a percentage perc of E individuals 
     perc=0.05 # percentage of E agents initially in location iloc; the rest of agents are S
 
-    rv=erlang(10,scale=T_l/10.)
 
     for agent in random.sample(agents[iloc],int(perc*n_agloc)):
         state[agent]=1
@@ -222,7 +241,7 @@ for irun in range(Nruns):
         I_tot=0
         for iloc in locations:
             I_tot+=len(I[iloc])
-        print(irun,time+1,I_tot)
+        #print(irun,time+1,I_tot)
         for ix in range(l):
             for iy in range(l):
                 kk=float(len(I[(ix,iy)]))/float(len(agents[(ix,iy)]))
@@ -315,32 +334,139 @@ plt.close()
 
 #figure av_peak_time as a function of distance
 
-av_peak_time=np.zeros((l+1)) #!!!!  BE CAREFUL
-av2_peak_time=np.zeros((l+1))
-norm_av_peak_time=np.zeros((l+1))
+maxdist=int(3.0*l/4.0)
+
+av_peak_time=np.zeros((maxdist)) #!!!!  BE CAREFUL
+av2_peak_time=np.zeros((maxdist))
+norm_av_peak_time=np.zeros((maxdist))
 a=int(l/2)
 for ix in range(l):
     for iy in range(l):
         d=abs(ix-a)+abs(iy-a)
-        for irun in range(Nruns):
-            kk=float(peak_time[irun][ix][iy])
-            av_peak_time[d]+=kk
-            av2_peak_time[d]+=kk*kk
-            norm_av_peak_time[d]+=1.0
+        if d<maxdist:
+            print(d)
+            for irun in range(Nruns):
+                kk=float(peak_time[irun][ix][iy])
+                av_peak_time[d]+=kk
+                av2_peak_time[d]+=kk*kk
+                norm_av_peak_time[d]+=1.0
 
-for i in range(l+1):
-    print(av_peak_time[i],av2_peak_time[i])
+for i in range(maxdist):
+    #print(av_peak_time[i],av2_peak_time[i])
     av_peak_time[i]=av_peak_time[i]/norm_av_peak_time[i]
     av2_peak_time[i]=av2_peak_time[i]/norm_av_peak_time[i]
     av2_peak_time[i]=np.sqrt(abs(av2_peak_time[i]-av_peak_time[i]*av_peak_time[i]))
 
 fig=plt.figure()
 #plt.subplot(221,title='$P$ only space')
-#plt.ylim(0,max(av_peak_time))
-plt.errorbar(np.arange(l+1),av_peak_time,yerr=av2_peak_time)
+plt.ylim(0,400)
+plt.errorbar(np.arange(maxdist),av_peak_time,yerr=av2_peak_time)
 fig.savefig('av_peak_time_d_l_'+str(l)+'_Tl_'+str(T_l)+'_'+str(m)+'.png',bbox_inches='tight')
 #plt.show()
 plt.close()
+
+
+#PIECE OF CODE FOR DOING A PIECEWISE LINEAR APPROXIMATION
+
+from scipy import optimize
+
+def piecewise_linear(x, x0, y0, k1, k2):
+    return np.piecewise(x, [x < x0, x > x0], [lambda x:k1*x + y0-k1*x0, lambda x:k2*x + y0-k2*x0])
+
+
+##do the fits for piecewise linear fits (for peak times)
+
+x=np.linspace(0, maxdist, maxdist)
+y=av_peak_time
+
+p , e = optimize.curve_fit(piecewise_linear, x, y)
+print(p)
+
+
+xd = np.linspace(0, maxdist, 100)
+plt.plot(x, y, "o")
+plt.plot(xd, piecewise_linear(xd, *p))
+plt.show()
+
+k1=0.0
+k1_2=0.0
+
+k2=0.0
+k2_2=0.0
+
+x0=0.0
+x0_2=0.0
+
+
+x=np.linspace(0, maxdist, maxdist)
+
+for irun in range(Nruns):
+    #x = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ,11, 12, 13, 14, 15], dtype=float)
+    #figure av_peak_time as a function of distance
+
+    av_peak_time=np.zeros((maxdist)) #!!!!  BE CAREFUL
+    #av2_peak_time=np.zeros((l+1))
+    norm_av_peak_time=np.zeros((maxdist))
+    a=int(l/2)
+    for ix in range(l):
+        for iy in range(l):
+            d=abs(ix-a)+abs(iy-a)
+            if d<maxdist:
+                kk=float(peak_time[irun][ix][iy])
+                av_peak_time[d]+=kk
+                #av2_peak_time[d]+=kk*kk
+                norm_av_peak_time[d]+=1.0
+
+    for i in range(maxdist):
+        #print(av_peak_time[i],av2_peak_time[i])
+        #if norm_av_peak_time[i]==0.0:
+            #print(l,i,irun)
+        #elif norm_av_peak_time[i]=='NaN':
+            #print(l,i,irun)
+        #elif norm_av_peak_time[i]=='inf':
+            #print(l,i,irun)
+        #print(irun,l,i,av_peak_time[i],norm_av_peak_time[i])
+        av_peak_time[i]=av_peak_time[i]/norm_av_peak_time[i]
+        #av2_peak_time[i]=av2_peak_time[i]/norm_av_peak_time[i]
+        #av2_peak_time[i]=np.sqrt(abs(av2_peak_time[i]-av_peak_time[i]*av_peak_time[i]))
+        
+    y=av_peak_time
+    #y = np.array([5, 7, 9, 11, 13, 15, 28.92, 42.81, 56.7, 70.59, 84.47, 98.36, 112.25, 126.14, 140.03])
+
+    p , e = optimize.curve_fit(piecewise_linear, x, y)
+    
+    x0+=p[0]
+    x0_2+=p[0]*p[0]
+    
+    k1+=p[2]
+    k1_2+=p[2]*p[2]
+    
+    k2+=p[3]
+    k2_2+=p[3]*p[3]
+    
+    
+    xd = np.linspace(0, maxdist, 100)
+    plt.plot(x, y, "o")
+    plt.plot(xd, piecewise_linear(xd, *p))
+    plt.show()
+    #pl.plot(xd, piecewise_linear(xd, *p))
+
+a=1/float(Nruns)
+x0=x0*a
+x0_2=x0_2*a
+x0_2=x0*x0-x0_2
+
+k1=k1*a
+k1_2=k1_2*a
+k1_2=k1*k1-k1_2
+
+k2=k2*a
+k2_2=k2_2*a
+k2_2=k2*k2-k2_2
+
+fout=open('spatial_spread_l_'+str(l)+'_erlang_'+str(erlang_type)+'_Tl_'+str(T_l)+'.dat','w')
+fout.write('%i %f %f %f %f %f %f \n' % (T_l,x0,x0_2,k1,k1_2,k2,k2_2))
+fout.close()
 
 
 
@@ -375,6 +501,4 @@ plt.close()
 ##B=LA.matrix_power(A,T_l)
 ##print(B)
 ##print(type(B))
-
-
 
